@@ -1,0 +1,321 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String        @id @default(uuid())
+  firstName           String
+  lastName            String
+  idNumber            String        @unique
+  phoneNumber         String        @unique
+  email               String?       @unique
+  pin                 String
+  role                UserRole      @default(USER)
+  kycStatus           KycStatus     @default(PENDING)
+  creditScore         Int?
+  creditLimit         Decimal?
+  isActive            Boolean       @default(true)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  kycDocuments        KycDocument[]
+  loans               Loan[]
+  payments            Payment[]     @relation("UserPayments")
+  referralsAsReferee  Referral[]    @relation("UserReferee")
+  referralsAsReferrer Referral[]    @relation("UserReferrer")
+  salesAgent          SalesAgent?
+  notifications       Notification[]
+
+  @@map("users")
+}
+
+model KycDocument {
+  id           String       @id @default(uuid())
+  userId       String
+  documentType DocumentType
+  documentUrl  String
+  status       KycStatus    @default(PENDING)
+  iprsResponse Json?
+  verifiedAt   DateTime?
+  createdAt    DateTime     @default(now())
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@map("kyc_documents")
+}
+
+model Loan {
+  id                String          @id @default(uuid())
+  userId            String
+  deviceId          String?
+  amount            Decimal
+  interestRate      Decimal
+  tenure            Int
+  status            LoanStatus      @default(PENDING)
+  approvedAt        DateTime?
+  disbursedAt       DateTime?
+  dueDate           DateTime?
+  principalPaid     Decimal         @default(0)
+  interestPaid      Decimal         @default(0)
+  totalPaid         Decimal         @default(0)
+  outstandingAmount Decimal
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  loanCharges       LoanCharge[]
+  extensions        LoanExtension[]
+  device            Device?         @relation(fields: [deviceId], references: [id])
+  user              User            @relation(fields: [userId], references: [id])
+  payments          Payment[]
+
+  @@map("loans")
+}
+
+model Device {
+  id         String       @id @default(uuid())
+  sku        String       @unique
+  brand      String
+  model      String
+  price      Decimal
+  imei       String?      @unique
+  lockStatus LockStatus   @default(UNLOCKED)
+  supplierId String
+  shopId     String?
+  status     DeviceStatus @default(AVAILABLE)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  shop       Shop?        @relation(fields: [shopId], references: [id])
+  supplier   Supplier     @relation(fields: [supplierId], references: [id])
+  loans      Loan[]
+
+  @@map("devices")
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  loanId         String
+  userId         String
+  amount         Decimal
+  paymentMethod  PaymentMethod
+  transactionRef String        @unique
+  status         PaymentStatus @default(PENDING)
+  mpesaReceiptNo String?
+  paidAt         DateTime?
+  reconciled     Boolean       @default(false)
+  reconciledAt   DateTime?
+  createdAt      DateTime      @default(now())
+  loan           Loan          @relation(fields: [loanId], references: [id])
+  user           User          @relation("UserPayments", fields: [userId], references: [id])
+
+  @@map("payments")
+}
+
+model Shop {
+  id         String     @id @default(uuid())
+  name       String
+  location   String
+  paybill    String?
+  tillNumber String?
+  managerId  String
+  b2bCharges Decimal    @default(0)
+  isActive   Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  devices    Device[]
+  sales      Sale[]
+  manager    SalesAgent @relation(fields: [managerId], references: [id])
+
+  @@map("shops")
+}
+
+model SalesAgent {
+  id              String       @id @default(uuid())
+  userId          String       @unique
+  employeeId      String       @unique
+  role            SalesRole
+  supervisorId    String?
+  region          String?
+  team            String?
+  commissionRate  Decimal      @default(0)
+  commissionEarned Decimal     @default(0)
+  isActive        Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  referrals       Referral[]   @relation("AgentReferrals")
+  sales           Sale[]
+  supervisor      SalesAgent?  @relation("AgentSupervisor", fields: [supervisorId], references: [id])
+  subordinates    SalesAgent[] @relation("AgentSupervisor")
+  user            User         @relation(fields: [userId], references: [id])
+  shops           Shop[]
+
+  @@map("sales_agents")
+}
+
+model Sale {
+  id                String     @id @default(uuid())
+  loanId            String     @unique
+  agentId           String
+  shopId            String
+  customerOtp       String
+  agentOtp          String
+  customerOtpVerified Boolean  @default(false)
+  agentOtpVerified  Boolean    @default(false)
+  depositAmount     Decimal
+  deviceImei        String
+  status            SaleStatus @default(PENDING)
+  completedAt       DateTime?
+  createdAt         DateTime   @default(now())
+  agent             SalesAgent @relation(fields: [agentId], references: [id])
+  shop              Shop       @relation(fields: [shopId], references: [id])
+
+  @@map("sales")
+}
+
+model LoanCharge {
+  id        String   @id @default(uuid())
+  loanId    String
+  type      String
+  amount    Decimal
+  createdAt DateTime @default(now())
+  loan      Loan     @relation(fields: [loanId], references: [id])
+
+  @@map("loan_charges")
+}
+
+model LoanExtension {
+  id           String   @id @default(uuid())
+  loanId       String
+  extensionFee Decimal
+  newDueDate   DateTime
+  createdAt    DateTime @default(now())
+  loan         Loan     @relation(fields: [loanId], references: [id])
+
+  @@map("loan_extensions")
+}
+
+model Referral {
+  id           String      @id @default(uuid())
+  referrerId   String
+  refereeId    String
+  salesAgentId String?
+  level        Int
+  createdAt    DateTime    @default(now())
+  referee      User        @relation("UserReferee", fields: [refereeId], references: [id])
+  referrer     User        @relation("UserReferrer", fields: [referrerId], references: [id])
+  salesAgent   SalesAgent? @relation("AgentReferrals", fields: [salesAgentId], references: [id])
+
+  @@map("referrals")
+}
+
+model Supplier {
+  id        String   @id @default(uuid())
+  name      String
+  contact   String?
+  email     String?
+  createdAt DateTime @default(now())
+  isActive  Boolean  @default(true)
+  devices   Device[]
+
+  @@map("suppliers")
+}
+
+model Notification {
+  id        String            @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  status    NotificationStatus @default(PENDING)
+  readAt    DateTime?
+  createdAt DateTime          @default(now())
+  user      User              @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+enum KycStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum LoanStatus {
+  PENDING
+  APPROVED
+  DISBURSED
+  ACTIVE
+  COMPLETED
+  DEFAULTED
+  WRITTEN_OFF
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  MPESA
+  BANK_TRANSFER
+  CASH
+  CARD
+}
+
+enum LockStatus {
+  LOCKED
+  UNLOCKED
+  BYPASSED
+}
+
+enum DeviceStatus {
+  AVAILABLE
+  SOLD
+  RESERVED
+  DAMAGED
+  LOST
+}
+
+enum SalesRole {
+  BA
+  BA_SUPERVISOR
+  TBL
+  RBL
+  MANAGER
+}
+
+enum DocumentType {
+  ID_CARD
+  PASSPORT
+  DRIVING_LICENSE
+  UTILITY_BILL
+}
+
+enum SaleStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum UserRole {
+  ADMIN
+  USER
+  AGENT
+  MANAGER
+}
+
+enum NotificationType {
+  LOAN_APPROVED
+  PAYMENT_DUE
+  DEVICE_LOCKED
+  SYSTEM
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
